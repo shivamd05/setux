@@ -1,4 +1,3 @@
-
 package com.fightclub.setux.management.dto.responceDto;
 
 import lombok.AllArgsConstructor;

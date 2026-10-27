@@ -15,10 +15,12 @@ public class HealthController {
 
     private final HealthService healthService;
 
+    /** Creates the controller with its health service. */
     public HealthController(HealthService healthService) {
         this.healthService = healthService;
     }
 
+    /** Returns application and database health status. */
     @GetMapping
     public ResponseEntity<HealthResponce> health() {
         String dbStatus = healthService.getHealth();

@@ -10,6 +10,7 @@ public class HealthService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** Checks database connectivity and returns its status. */
     public String getHealth() {
         String databaseStatus = "DOWN";
 

@@ -1,4 +1,3 @@
-
 package com.fightclub.setux.management.service;
 
 import com.fightclub.setux.management.dto.requestDto.LoginRequest;
@@ -7,11 +6,8 @@ import com.fightclub.setux.management.entity.ManagementUser;
 import com.fightclub.setux.management.entity.OrganizationStatus;
 import com.fightclub.setux.management.exception.ApiException;
 import com.fightclub.setux.management.repository.ManagementUserRepository;
-
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -26,13 +22,12 @@ import java.time.Instant;
 @Service
 public class AuthenticationService {
 
-
-
     private final ManagementUserRepository managementUserRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
     private final long expirationSeconds;
 
+    /** Creates the service with its authentication and JWT dependencies. */
     public AuthenticationService(
             ManagementUserRepository managementUserRepository,
             PasswordEncoder passwordEncoder,
@@ -46,6 +41,7 @@ public class AuthenticationService {
         this.expirationSeconds = expirationSeconds;
     }
 
+    /** Validates credentials and issues a signed JWT. */
     @Transactional(readOnly = true)
     public LoginResponce login(LoginRequest request) {
 
@@ -63,7 +59,9 @@ public class AuthenticationService {
         if (user.getOrganization() != null
                 && user.getOrganization().getStatus()
                 != OrganizationStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.FORBIDDEN,"Organization is not active");
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "Organization is not active");
         }
 
         Instant issuedAt = Instant.now();
@@ -102,7 +100,10 @@ public class AuthenticationService {
         );
     }
 
+    /** Creates the standard response for invalid login credentials. */
     private RuntimeException invalidCredential() {
-        return new ApiException(HttpStatus.UNAUTHORIZED,"Invalid username or password");
+        return new ApiException(
+                HttpStatus.UNAUTHORIZED,
+                "Invalid username or password");
     }
 }

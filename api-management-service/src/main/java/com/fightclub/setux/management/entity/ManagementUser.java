@@ -1,4 +1,3 @@
-
 package com.fightclub.setux.management.entity;
 
 import jakarta.persistence.*;

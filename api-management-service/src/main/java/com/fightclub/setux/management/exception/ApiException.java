@@ -2,17 +2,18 @@ package com.fightclub.setux.management.exception;
 
 import org.springframework.http.HttpStatus;
 
-public class ApiException extends RuntimeException{
-    private final HttpStatus status ;
+public class ApiException extends RuntimeException {
+    private final HttpStatus status;
 
-
-    public ApiException(HttpStatus status ,String message){
+    /** Creates an API exception with its HTTP status and message. */
+    public ApiException(HttpStatus status, String message) {
         super(message);
-        this.status = status ;
+        this.status = status;
     }
 
-    public HttpStatus getStatus(){
-        return status ;
+    /** Returns the HTTP status associated with this exception. */
+    public HttpStatus getStatus() {
+        return status;
     }
 
 }
