@@ -1,7 +1,6 @@
 package com.fightclub.setux.gateway.controller;
 
 import com.fightclub.setux.gateway.dto.responceDto.HealthResponce;
-import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

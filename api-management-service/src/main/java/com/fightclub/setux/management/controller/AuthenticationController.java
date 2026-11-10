@@ -14,16 +14,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthenticationController {
 
-    private final AuthenticationService authenticationService ;
+    private final AuthenticationService authenticationService;
 
-    public AuthenticationController(AuthenticationService authenticationService){
-        this.authenticationService = authenticationService ;
+    /** Creates the controller with its authentication service. */
+    public AuthenticationController(AuthenticationService authenticationService) {
+        this.authenticationService = authenticationService;
     }
 
+    /** Authenticates the supplied credentials and returns a JWT. */
     @PostMapping("/login")
-    public ResponseEntity<LoginResponce> login  (@Valid @RequestBody LoginRequest request){
-        return ResponseEntity.ok(authenticationService.login(request)) ;
+    public ResponseEntity<LoginResponce> login(
+            @Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(authenticationService.login(request));
     }
-
-
 }

@@ -1,11 +1,8 @@
-
 package com.fightclub.setux.management.config;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -15,21 +12,31 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 @Configuration
 public class SecurityConfig {
 
-
+    /** Configures stateless authentication and role-based endpoint access. */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http)
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationConverter jwtAuthenticationConverter)
             throws Exception {
 
         http
+                // Enable CORS so the browser frontend can communicate with this API
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
@@ -47,22 +54,26 @@ public class SecurityConfig {
                         .hasRole("TENANT_ADMIN")
 
                         .requestMatchers("/api/gateway/**")
-                        .hasRole("GATEWAY_SERVER")
+                        // Role name must match the tutorial's seeded GATEWAY_SERVICE role.
+                        .hasRole("GATEWAY_SERVICE")
 
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 ->
-                        oauth2.jwt(Customizer.withDefaults())
+                        oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(
+                                jwtAuthenticationConverter))
                 );
 
         return http.build();
     }
 
+    /** Provides the password encoder used for stored credentials. */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    /** Creates JWTs signed with the configured secret. */
     @Bean
     public JwtEncoder jwtEncoder(
             @Value("${security.jwt.secret}") String secret) {
@@ -77,7 +88,7 @@ public class SecurityConfig {
                 .build();
     }
 
-
+    /** Validates JWTs using the configured secret. */
     @Bean
     public JwtDecoder jwtDecoder(
             @Value("${security.jwt.secret}") String secret) {
@@ -91,13 +102,35 @@ public class SecurityConfig {
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
     }
-    @Bean
-    public CommandLineRunner generatePasswordHash(
-            PasswordEncoder passwordEncoder) {
 
-        return args -> {
-            System.out.println("BCrypt Hash: "
-                    + passwordEncoder.encode("platform123"));
-        };
+    /** Maps the JWT role claim to a Spring Security authority. */
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter authoritiesConverter =
+                new JwtGrantedAuthoritiesConverter();
+        authoritiesConverter.setAuthoritiesClaimName("role");
+        authoritiesConverter.setAuthorityPrefix("ROLE_");
+
+        JwtAuthenticationConverter authenticationConverter =
+                new JwtAuthenticationConverter();
+        authenticationConverter.setJwtGrantedAuthoritiesConverter(
+                authoritiesConverter);
+        return authenticationConverter;
     }
+
+    /** Configures CORS to allow requests from the browser frontend. */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        // Allow local development frontend origins (e.g. VS Code Live Server on port 5500 or 3000)
+        configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
 }

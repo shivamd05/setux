@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SetuX | Multi-Tenant API Gateway Control Plane</title>
+    <link rel="icon" type="image/png" href="assets/images/setux-logo.png">
+    <!-- Google Font: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=3">
+
+    <!-- Immediate Synchronous Modal & Auth Controls (Failsafe against browser script cache) -->
+    <script>
+        function openLoginModal() {
+            var m = document.getElementById('login-modal');
+            if (m) {
+                m.classList.add('open');
+                m.style.setProperty('display', 'flex', 'important');
+                setTimeout(function() {
+                    var u = document.getElementById('login-username');
+                    if (u) u.focus();
+                }, 50);
+            }
+        }
+        function closeLoginModal() {
+            var m = document.getElementById('login-modal');
+            if (m) {
+                m.classList.remove('open');
+                m.style.setProperty('display', 'none', 'important');
+            }
+        }
+        function handleAuthAction() {
+            if (window.ApiClient && window.ApiClient.getToken && window.ApiClient.getToken()) {
+                window.ApiClient.clearSession();
+                window.location.reload();
+            } else {
+                openLoginModal();
+            }
+        }
+        window.openLoginModal = openLoginModal;
+        window.closeLoginModal = closeLoginModal;
+        window.handleAuthAction = handleAuthAction;
+    </script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- =================================================================== -->
+        <!-- SIDEBAR NAVIGATION                                                  -->
+        <!-- =================================================================== -->
+        <aside class="sidebar">
+            <div class="brand-banner">
+                <img src="assets/images/setux-logo.png" alt="SetuX Gateway Control Plane" class="brand-logo-img" onclick="switchView('dashboard')">
+            </div>
+
+            <!-- Active Identity Chip -->
+            <div class="sidebar-role-indicator" id="sidebar-role-container">
+                <span class="role-badge guest" id="active-role-badge">🔒 GUEST</span>
+                <span class="role-description" id="active-role-desc">Not authenticated • Sign in to access</span>
+            </div>
+
+            <!-- Section 1: General (Always Accessible) -->
+            <div class="nav-section-label">GENERAL</div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard & Status</span>
+                </a>
+            </nav>
+
+            <!-- Section 2: Platform Owner (Unlocked ONLY for PLATFORM_ADMIN) -->
+            <div class="nav-section-label role-nav-header role-platform hidden">PLATFORM OWNER</div>
+            <nav class="nav-menu role-menu role-platform hidden">
+                <a href="#" class="nav-item" data-view="organizations">
+                    <span class="nav-icon">🏢</span>
+                    <span>Tenant Organizations</span>
+                    <span id="nav-orgs-count" class="nav-pill purple">0</span>
+                </a>
+            </nav>
+
+            <!-- Section 3: Tenant Admin (Unlocked ONLY for TENANT_ADMIN) -->
+            <div class="nav-section-label role-nav-header role-tenant hidden">TENANT CONTROL PLANE</div>
+            <nav class="nav-menu role-menu role-tenant hidden">
+                <a href="#" class="nav-item" data-view="tenant-profile">
+                    <span class="nav-icon">🏛️</span>
+                    <span>Company Profile</span>
+                </a>
+                <a href="#" class="nav-item" data-view="routes">
+                    <span class="nav-icon">⚡</span>
+                    <span>API Routes & Policies</span>
+                    <span id="nav-routes-count" class="nav-pill cyan">0</span>
+                </a>
+                <a href="#" class="nav-item" data-view="tenant-audits">
+                    <span class="nav-icon">📜</span>
+                    <span>Audit Trail</span>
+                </a>
+            </nav>
+
+            <!-- Section 4: Smart Gateway Node (Unlocked ONLY for GATEWAY_SERVICE) -->
+            <div class="nav-section-label role-nav-header role-gateway hidden">GATEWAY NODE</div>
+            <nav class="nav-menu role-menu role-gateway hidden">
+                <a href="#" class="nav-item" data-view="gateway-cache">
+                    <span class="nav-icon">🤖</span>
+                    <span>Proxy Routing Cache</span>
+                    <span class="nav-pill emerald">Sync</span>
+                </a>
+            </nav>
+
+            <!-- Services Status Snapshot -->
+            <div class="nav-section-label">SYSTEM HEALTH</div>
+            <div class="sidebar-system-card">
+                <div class="system-item">
+                    <span class="system-label">API Management</span>
+                    <span id="sidebar-mgmt-status" class="status-chip offline">8081 • Checking...</span>
+                </div>
+                <div class="system-item">
+                    <span class="system-label">Smart Gateway</span>
+                    <span id="sidebar-gateway-status" class="status-chip ready">8080 • Standby</span>
+                </div>
+                <div class="system-item">
+                    <span class="system-label">Analytics Service</span>
+                    <span id="sidebar-analytics-status" class="status-chip ready">8082 • Standby</span>
+                </div>
+            </div>
+
+            <!-- Profile Widget -->
+            <div class="sidebar-footer">
+                <div class="user-profile-widget">
+                    <div class="avatar-circle" id="sidebar-avatar">G</div>
+                    <div class="user-details">
+                        <strong id="sidebar-username">Guest User</strong>
+                        <span id="sidebar-role-label">UNAUTHENTICATED</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- =================================================================== -->
+        <!-- MAIN CONTENT AREA                                                   -->
+        <!-- =================================================================== -->
+        <main class="main-content">
+            <!-- Topbar Header -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <div class="breadcrumb">
+                        <span class="text-muted">SetuX Gateway</span>
+                        <span class="breadcrumb-separator">/</span>
+                        <span id="current-view-title" class="breadcrumb-current">Dashboard</span>
+                    </div>
+                    <p class="greeting-subtitle" id="current-time">Loading clock...</p>
+                </div>
+
+                <div class="topbar-right">
+                    <!-- Verified Role Chip -->
+                    <div id="verified-role-pill" class="verified-role-chip guest">
+                        <span class="role-dot"></span>
+                        <span id="verified-role-text">Not Authenticated</span>
+                    </div>
+
+                    <!-- Spring Boot Health Pill -->
+                    <button id="backend-status-pill" class="backend-pill offline" title="Click to ping Spring Boot /health">
+                        <span class="pulse-dot"></span>
+                        <span class="pill-text">Spring Boot: Checking...</span>
+                    </button>
+
+                    <button id="refresh-btn" class="btn btn-secondary">
+                        <span class="btn-icon">🔄</span>
+                        <span>Refresh</span>
+                    </button>
+
+                    <!-- Auth Button -->
+                    <button id="auth-btn" class="btn btn-primary" onclick="window.handleAuthAction()">
+                        <span class="btn-icon">🔑</span>
+                        <span id="auth-btn-label">Sign In</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 1: GENERAL DASHBOARD                                       -->
+            <!-- =============================================================== -->
+            <section id="view-dashboard" class="view-section active">
+                <!-- Hero Topology Widget -->
+                <div class="hero-banner">
+                    <div class="hero-content">
+                        <div class="hero-badge" id="hero-role-badge">🔒 ROLE-BASED ACCESS CONTROL</div>
+                        <h1 id="greeting-title">SetuX Gateway Control Plane</h1>
+                        <p class="hero-description" id="hero-role-desc">
+                            Welcome to SetuX. Sign in with your database credentials to unlock your authorized control plane.
+                        </p>
+                    </div>
+
+                    <div class="topology-widget">
+                        <div class="topology-node client-node">
+                            <span class="node-icon">💻</span>
+                            <span class="node-title">Clients</span>
+                            <span class="node-sub">HTTP Traffic</span>
+                        </div>
+                        <div class="topology-pipe">
+                            <span class="pipe-line"></span>
+                            <span class="traffic-pulse"></span>
+                        </div>
+                        <div class="topology-node gateway-node">
+                            <span class="node-icon">⚡</span>
+                            <span class="node-title">Smart Gateway</span>
+                            <span class="node-sub">Port 8080 (Proxy)</span>
+                        </div>
+                        <div class="topology-pipe">
+                            <span class="pipe-line"></span>
+                            <span class="traffic-pulse"></span>
+                        </div>
+                        <div class="topology-node target-node">
+                            <span class="node-icon">🗄️</span>
+                            <span class="node-title">Backend APIs</span>
+                            <span class="node-sub">Microservices</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unauthenticated Sign-In Callout -->
+                <div id="guest-access-card" class="auth-gate-card">
+                    <div class="auth-gate-icon">🔐</div>
+                    <div class="auth-gate-body">
+                        <h3>Sign In with your Account to Access Your Control Plane</h3>
+                        <p>
+                            The SetuX Spring Boot backend authorizes three distinct actors based on database roles:
+                        </p>
+                        <div class="roles-feature-grid">
+                            <div class="role-feature-item purple">
+                                <strong>1. PLATFORM_ADMIN (Platform Owner)</strong>
+                                <span>Manages multi-tenant organizations & provisions tenant administrators.</span>
+                            </div>
+                            <div class="role-feature-item cyan">
+                                <strong>2. TENANT_ADMIN (Company Service User)</strong>
+                                <span>Configures downstream routes, rate limits, headers & inspects audit logs.</span>
+                            </div>
+                            <div class="role-feature-item emerald">
+                                <strong>3. GATEWAY_SERVICE (Smart Gateway Machine Identity)</strong>
+                                <span>Pulls real-time proxy routing rules into in-memory cache for port 8080.</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="openLoginModal()">
+                                🔑 Open Sign In Dialog
+                            </button>
+                            <button class="btn btn-secondary" onclick="quickLogin('platform-admin', 'platform123')">
+                                ⚡ Quick Sign In: platform-admin (Platform Owner)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Metrics Grid -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <div class="metric-icon-wrap purple">🏢</div>
+                            <span class="trend-pill positive">Multi-Tenant</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-label">Organizations (Tenants)</span>
+                            <div class="metric-value-wrap">
+                                <span id="stat-orgs-count" class="metric-value">0</span>
+                                <span class="metric-unit">tenants</span>
+                            </div>
+                            <span class="metric-footer-text">Managed via <code>/api/platform/organizations</code></span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <div class="metric-icon-wrap cyan">⚡</div>
+                            <span class="trend-pill positive">Active</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-label">Configured API Routes</span>
+                            <div class="metric-value-wrap">
+                                <span id="stat-routes-count" class="metric-value">0</span>
+                                <span class="metric-unit">routes</span>
+                            </div>
+                            <span class="metric-footer-text">Managed via <code>/api/tenant/routes</code></span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <div class="metric-icon-wrap emerald">🤖</div>
+                            <span class="trend-pill neutral">Port 8080</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-label">Gateway Cache Sync</span>
+                            <div class="metric-value-wrap">
+                                <span id="stat-gateway-sync" class="metric-value">Online</span>
+                                <span class="metric-unit">routes</span>
+                            </div>
+                            <span class="metric-footer-text">Pulled via <code>/api/gateway/routes</code></span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <div class="metric-icon-wrap blue">🛡️</div>
+                            <span class="trend-pill positive">Enforced</span>
+                        </div>
+                        <div class="metric-body">
+                            <span class="metric-label">Security & RBAC</span>
+                            <div class="metric-value-wrap">
+                                <span class="metric-value">JWT</span>
+                                <span class="metric-unit">OAuth2</span>
+                            </div>
+                            <span class="metric-footer-text">Stateless Bearer Tokens</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Microservices Health & Topology Cards -->
+                <div class="glass-panel">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Microservices Health & Topology</h3>
+                            <p class="panel-subtitle">Real-time status of SetuX Spring Boot backend services</p>
+                        </div>
+                        <span id="last-updated-text" class="timestamp-pill">Live Sync: Active</span>
+                    </div>
+
+                    <div class="service-cards-grid">
+                        <div class="service-status-card">
+                            <div class="service-card-header">
+                                <div class="service-identity">
+                                    <span class="service-avatar blue">⚙️</span>
+                                    <div>
+                                        <strong>API Management Service</strong>
+                                        <span class="service-endpoint">http://localhost:8081</span>
+                                    </div>
+                                </div>
+                                <span id="service-status-8081" class="status-badge offline">Checking...</span>
+                            </div>
+                            <div class="service-card-body">
+                                <div class="service-meta-row">
+                                    <span>Roles Served:</span>
+                                    <strong>PLATFORM_ADMIN, TENANT_ADMIN</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Database:</span>
+                                    <strong>MySQL & Flyway (setux_db)</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Health Endpoint:</span>
+                                    <code>/health</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="service-status-card">
+                            <div class="service-card-header">
+                                <div class="service-identity">
+                                    <span class="service-avatar cyan">⚡</span>
+                                    <div>
+                                        <strong>Smart Gateway</strong>
+                                        <span class="service-endpoint">http://localhost:8080</span>
+                                    </div>
+                                </div>
+                                <span id="service-status-8080" class="status-badge ready">Standby</span>
+                            </div>
+                            <div class="service-card-body">
+                                <div class="service-meta-row">
+                                    <span>Role Served:</span>
+                                    <strong>GATEWAY_SERVICE (Machine Token)</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Proxy Engine:</span>
+                                    <strong>Sub-millisecond Forwarding</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Health Endpoint:</span>
+                                    <code>/health</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="service-status-card">
+                            <div class="service-card-header">
+                                <div class="service-identity">
+                                    <span class="service-avatar purple">📊</span>
+                                    <div>
+                                        <strong>Analytics Service</strong>
+                                        <span class="service-endpoint">http://localhost:8082</span>
+                                    </div>
+                                </div>
+                                <span id="service-status-8082" class="status-badge ready">Standby</span>
+                            </div>
+                            <div class="service-card-body">
+                                <div class="service-meta-row">
+                                    <span>Event Bus:</span>
+                                    <strong>Kafka Access Event Consumer</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Storage:</span>
+                                    <strong>MongoDB Aggregates</strong>
+                                </div>
+                                <div class="service-meta-row">
+                                    <span>Health Endpoint:</span>
+                                    <code>/health</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 2: ROLE 1 - PLATFORM_ADMIN (Organizations / Tenants)       -->
+            <!-- =============================================================== -->
+            <section id="view-organizations" class="view-section">
+                <div class="glass-panel">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Tenant Organizations (Platform Owner Console)</h3>
+                            <p class="panel-subtitle">Manage client companies, control lifecycle status, and provision tenant administrators</p>
+                        </div>
+                        <div class="panel-actions">
+                            <span class="role-badge purple">👑 ROLE: PLATFORM_ADMIN</span>
+                            <button id="open-org-modal-btn" class="btn btn-primary" onclick="openOrgModal()">
+                                <span class="btn-icon">➕</span>
+                                <span>Register Organization</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Organization Name & ID</th>
+                                    <th>Slug Identifier</th>
+                                    <th>Lifecycle Status</th>
+                                    <th>Tenant Administrator</th>
+                                    <th>Registered On</th>
+                                    <th class="text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orgs-table-body">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                                        Loading tenant organizations from Spring Boot...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 3: ROLE 2 - TENANT_ADMIN (Company Profile)                 -->
+            <!-- =============================================================== -->
+            <section id="view-tenant-profile" class="view-section">
+                <div class="glass-panel" style="max-width: 680px;">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Tenant Organization Profile</h3>
+                            <p class="panel-subtitle">View and update your company details via <code>/api/tenant/organization</code></p>
+                        </div>
+                        <span class="role-badge cyan">🏢 TENANT_ADMIN</span>
+                    </div>
+
+                    <form id="tenant-profile-form" style="padding: 10px 0;">
+                        <div class="form-group">
+                            <label>Organization Unique Slug</label>
+                            <input type="text" id="profile-org-slug" disabled style="opacity: 0.6; cursor: not-allowed;">
+                            <span class="field-hint">Slug is permanent and managed by the Platform Owner</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile-org-name">Company Display Name <span class="req">*</span></label>
+                            <input type="text" id="profile-org-name" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Organization Status</label>
+                            <input type="text" id="profile-org-status" disabled style="opacity: 0.6; cursor: not-allowed;">
+                        </div>
+
+                        <div class="modal-actions" style="justify-content: flex-start; margin-top: 20px;">
+                            <button type="submit" id="save-profile-btn" class="btn btn-primary">
+                                💾 Save Profile Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 4: ROLE 2 - TENANT_ADMIN (My API Routes)                   -->
+            <!-- =============================================================== -->
+            <section id="view-routes" class="view-section">
+                <div class="glass-panel">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Tenant API Routes & Gateway Policies</h3>
+                            <p class="panel-subtitle">Manage routing paths, downstream targets, allowed HTTP methods, and rate limits</p>
+                        </div>
+                        <div class="panel-actions">
+                            <span class="role-badge cyan">🏢 ROLE: TENANT_ADMIN</span>
+                            <button id="open-route-modal-btn" class="btn btn-primary" onclick="openRouteModal()">
+                                <span class="btn-icon">➕</span>
+                                <span>Create Route</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Search & Filter Toolbar -->
+                    <div class="table-toolbar">
+                        <div class="search-input-wrap">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="route-search-input" placeholder="Search routes by path, name, or slug ID...">
+                        </div>
+                        <div class="filter-actions">
+                            <select id="method-filter-select" class="custom-select">
+                                <option value="ALL">All HTTP Methods</option>
+                                <option value="GET">GET Only</option>
+                                <option value="POST">POST Only</option>
+                                <option value="PUT">PUT Only</option>
+                                <option value="DELETE">DELETE Only</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Route & ID</th>
+                                    <th>Gateway Incoming Path</th>
+                                    <th>Downstream Target URL</th>
+                                    <th>Methods</th>
+                                    <th>Rate Limit & Timeout</th>
+                                    <th>Active Status</th>
+                                    <th class="text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="routes-table-body">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                                        Loading routes from Spring Boot...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 5: ROLE 2 - TENANT_ADMIN (Audit Records)                   -->
+            <!-- =============================================================== -->
+            <section id="view-tenant-audits" class="view-section">
+                <div class="glass-panel">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Tenant Audit Records</h3>
+                            <p class="panel-subtitle">History of configuration changes logged by <code>AuditService</code> in MySQL</p>
+                        </div>
+                        <div class="panel-actions">
+                            <span class="role-badge cyan">🏢 ROLE: TENANT_ADMIN</span>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Resource Type</th>
+                                    <th>Resource ID</th>
+                                    <th>Actor</th>
+                                    <th>Duration</th>
+                                    <th>Result</th>
+                                    <th>Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audits-table-body">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                                        No audit records loaded yet.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- =============================================================== -->
+            <!-- VIEW 6: ROLE 3 - GATEWAY_SERVICE (Proxy Cache)                  -->
+            <!-- =============================================================== -->
+            <section id="view-gateway-cache" class="view-section">
+                <div class="glass-panel">
+                    <div class="glass-panel-header">
+                        <div>
+                            <h3>Smart Gateway Active In-Memory Routing Cache</h3>
+                            <p class="panel-subtitle">Live routing rules fetched by the Smart Gateway microservice via <code>/api/gateway/routes</code></p>
+                        </div>
+                        <div class="panel-actions">
+                            <span class="role-badge emerald">🤖 ROLE: GATEWAY_SERVICE</span>
+                        </div>
+                    </div>
+
+                    <div class="gateway-cache-info">
+                        <p>
+                            🤖 <strong>Microservice Machine Identity Mode</strong>: The Smart Gateway (port 8080) authenticates using its machine token to fetch active routing policies from port 8081 with zero overhead.
+                        </p>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Route Slug</th>
+                                    <th>Path Pattern</th>
+                                    <th>Downstream Target Base URL</th>
+                                    <th>Methods Allowed</th>
+                                    <th>Timeout (ms)</th>
+                                    <th>Cache Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gateway-cache-table-body">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                                        No active routes cached.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODALS                                                              -->
+    <!-- =================================================================== -->
+
+    <!-- Modal 1: Sign In Dialog -->
+    <div id="login-modal" class="modal-backdrop">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon blue">🔑</div>
+                    <div>
+                        <h3>Sign In to SetuX</h3>
+                        <p class="modal-subtitle">Authenticates with Spring Boot <code>/api/auth/login</code></p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeLoginModal()">&times;</button>
+            </div>
+
+            <form id="login-form">
+                <div id="login-error-alert" style="display: none; padding: 10px 14px; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--rose-danger); border-radius: var(--radius-sm); color: #fecdd3; font-size: 0.82rem; margin-bottom: 14px;"></div>
+
+                <div class="form-group">
+                    <label for="login-username">Username <span class="req">*</span></label>
+                    <input type="text" id="login-username" placeholder="e.g. platform-admin or tenant admin" required autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password">Password <span class="req">*</span></label>
+                    <input type="password" id="login-password" placeholder="Enter password" required autocomplete="current-password">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeLoginModal()">Cancel</button>
+                    <button type="submit" id="submit-login-btn" class="btn btn-primary">Authenticate</button>
+                </div>
+
+                <!-- Database Seed Accounts Quick Helper -->
+                <div class="quick-login-card">
+                    <div style="color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">⚡ 1-Click Database Seeded Credentials:</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-secondary" style="font-size: 0.72rem; padding: 4px 10px;" onclick="quickLogin('platform-admin', 'platform123')">
+                            👑 platform-admin (Platform Owner)
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 2: Register Tenant Organization (PLATFORM_ADMIN) -->
+    <div id="org-modal" class="modal-backdrop">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon purple">🏢</div>
+                    <div>
+                        <h3>Register Tenant Organization</h3>
+                        <p class="modal-subtitle">Platform Owner endpoint: <code>POST /api/platform/organizations</code></p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeOrgModal()">&times;</button>
+            </div>
+
+            <form id="org-form">
+                <input type="hidden" id="org-edit-id">
+
+                <div class="form-group">
+                    <label for="org-name">Organization Name <span class="req">*</span></label>
+                    <input type="text" id="org-name" placeholder="e.g. Acme Fintech Corp" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="org-slug">Organization Slug <span class="req">*</span></label>
+                    <input type="text" id="org-slug" placeholder="e.g. acme-fintech" pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$" required>
+                    <span class="field-hint">Lowercase letters, numbers, and single hyphens only</span>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeOrgModal()">Cancel</button>
+                    <button type="submit" id="submit-org-btn" class="btn btn-primary">Create Organization</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 3: Provision Tenant Administrator (PLATFORM_ADMIN) -->
+    <div id="tenant-admin-modal" class="modal-backdrop">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon cyan">👤</div>
+                    <div>
+                        <h3>Provision Tenant Administrator</h3>
+                        <p class="modal-subtitle">Platform Owner: <code>POST /api/platform/organizations/{id}/tenant-admin</code></p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeTenantAdminModal()">&times;</button>
+            </div>
+
+            <form id="tenant-admin-form">
+                <input type="hidden" id="admin-org-id">
+
+                <div class="form-group">
+                    <label>Target Organization</label>
+                    <input type="text" id="admin-org-display" disabled style="opacity: 0.6; cursor: not-allowed;">
+                </div>
+
+                <div class="form-group">
+                    <label for="admin-username">Administrator Username <span class="req">*</span></label>
+                    <input type="text" id="admin-username" placeholder="e.g. acme-admin" required autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="admin-password">Administrator Password <span class="req">*</span></label>
+                    <input type="password" id="admin-password" placeholder="Minimum 8 characters" minlength="8" required autocomplete="new-password">
+                    <span class="field-hint">Backend constraint: Minimum 8 characters</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="switch-control">
+                        <input type="checkbox" id="admin-enabled" checked>
+                        <span class="switch-slider"></span>
+                        <span class="switch-label">Enable Account Immediately</span>
+                    </label>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeTenantAdminModal()">Cancel</button>
+                    <button type="submit" id="submit-admin-btn" class="btn btn-primary">Save Administrator</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 4: Change Organization Status (PLATFORM_ADMIN) -->
+    <div id="org-status-modal" class="modal-backdrop">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon amber">⚙️</div>
+                    <div>
+                        <h3>Change Organization Status</h3>
+                        <p class="modal-subtitle">Platform Owner: <code>PATCH /api/platform/organizations/{id}/status</code></p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeOrgStatusModal()">&times;</button>
+            </div>
+
+            <form id="org-status-form">
+                <input type="hidden" id="status-org-id">
+
+                <div class="form-group">
+                    <label>Organization</label>
+                    <input type="text" id="status-org-display" disabled style="opacity: 0.6; cursor: not-allowed;">
+                </div>
+
+                <div class="form-group">
+                    <label for="status-select">Lifecycle Status <span class="req">*</span></label>
+                    <select id="status-select" class="custom-select" style="width: 100%;">
+                        <option value="ACTIVE">ACTIVE (Admins can sign in & serve routes)</option>
+                        <option value="SUSPENDED">SUSPENDED (Admins blocked from signing in)</option>
+                        <option value="PENDING">PENDING (Newly registered / Awaiting approval)</option>
+                    </select>
+                    <span class="field-hint" style="color: var(--amber-warning); margin-top: 6px;">
+                        ⚠️ Note: Tenant Admins cannot sign in unless their organization is in ACTIVE status!
+                    </span>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeOrgStatusModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Status</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 5: Configure API Route (TENANT_ADMIN) -->
+    <div id="route-modal" class="modal-backdrop">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon cyan">⚡</div>
+                    <div>
+                        <h3 id="route-modal-title">Configure Tenant API Route</h3>
+                        <p class="modal-subtitle">Saved via <code>/api/tenant/routes</code> for your authenticated organization</p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeRouteModal()">&times;</button>
+            </div>
+
+            <form id="route-form">
+                <input type="hidden" id="route-edit-id">
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="route-name">Route Label <span class="req">*</span></label>
+                        <input type="text" id="route-name" placeholder="e.g. Users Service API" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="route-id">Unique Slug / Route ID <span class="req">*</span></label>
+                        <input type="text" id="route-id" placeholder="e.g. users-service" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="path-pattern">Gateway Incoming Path Pattern <span class="req">*</span></label>
+                    <div class="input-with-prefix">
+                        <span class="input-prefix">http://localhost:8080</span>
+                        <input type="text" id="path-pattern" placeholder="/api/v1/users/**" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="target-url">Target Downstream URL <span class="req">*</span></label>
+                        <input type="url" id="target-url" placeholder="http://localhost:8083" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="target-prefix">Target Prefix</label>
+                        <input type="text" id="target-prefix" value="/" placeholder="/" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="route-rate-limit">Rate Limit (Requests / Minute)</label>
+                        <input type="number" id="route-rate-limit" placeholder="e.g. 60 (optional)" min="1">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="route-timeout">Timeout (ms) <span class="req">*</span></label>
+                        <input type="number" id="route-timeout" value="5000" min="1" max="60000" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Allowed HTTP Methods <span class="req">*</span></label>
+                    <div class="method-toggles-grid">
+                        <label class="toggle-card">
+                            <input type="checkbox" name="methods" value="GET" checked>
+                            <span class="method-chip GET">GET</span>
+                        </label>
+                        <label class="toggle-card">
+                            <input type="checkbox" name="methods" value="POST" checked>
+                            <span class="method-chip POST">POST</span>
+                        </label>
+                        <label class="toggle-card">
+                            <input type="checkbox" name="methods" value="PUT">
+                            <span class="method-chip PUT">PUT</span>
+                        </label>
+                        <label class="toggle-card">
+                            <input type="checkbox" name="methods" value="DELETE">
+                            <span class="method-chip DELETE">DELETE</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-row" style="margin-top: 8px;">
+                    <div class="form-group flex-1">
+                        <label class="switch-control">
+                            <input type="checkbox" id="route-active" checked>
+                            <span class="switch-slider"></span>
+                            <span class="switch-label">Deploy & Activate Route</span>
+                        </label>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label class="switch-control">
+                            <input type="checkbox" id="route-idempotency">
+                            <span class="switch-slider"></span>
+                            <span class="switch-label">Enable Idempotency</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeRouteModal()">Cancel</button>
+                    <button type="submit" id="submit-route-btn" class="btn btn-primary">Save Route</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 6: Route Version History (TENANT_ADMIN) -->
+    <div id="version-history-modal" class="modal-backdrop">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <div class="modal-icon cyan">📜</div>
+                    <div>
+                        <h3>Route Version History</h3>
+                        <p class="modal-subtitle">Saved snapshots via <code>GET /api/tenant/route-versions/{routeId}</code></p>
+                    </div>
+                </div>
+                <button type="button" class="close-icon-btn" onclick="closeVersionModal()">&times;</button>
+            </div>
+
+            <div id="version-history-content">
+                <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                    Loading version history...
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 16px;">
+                <button type="button" class="btn btn-secondary" onclick="closeVersionModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Stack -->
+    <div id="toast-container" class="toast-stack"></div>
+
+    <!-- Scripts -->
+    <script src="js/api.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
+</body>
+</html>

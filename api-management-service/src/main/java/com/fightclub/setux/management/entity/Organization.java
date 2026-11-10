@@ -16,17 +16,17 @@ public class Organization {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id ;
+    private Long id;
 
-    private String name ;
+    private String name;
 
-    private String slug ;
+    private String slug;
 
     @Enumerated(EnumType.STRING)
-    private OrganizationStatus status ;
+    private OrganizationStatus status;
 
-    private LocalDateTime createdAt ;
-    private LocalDateTime updatedAt ;
-    private LocalDateTime deletedAt ;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private LocalDateTime deletedAt;
 
 }
