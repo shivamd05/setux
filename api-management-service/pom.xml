@@ -105,7 +105,6 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-aspectj</artifactId>
 		</dependency>
-
 		<!-- JPA Tests -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

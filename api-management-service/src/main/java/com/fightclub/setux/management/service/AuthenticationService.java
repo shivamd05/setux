@@ -61,7 +61,7 @@ public class AuthenticationService {
                 != OrganizationStatus.ACTIVE) {
             throw new ApiException(
                     HttpStatus.FORBIDDEN,
-                    "Organization is not active");
+                    "The organization is not active");
         }
 
         Instant issuedAt = Instant.now();
